@@ -1,1 +1,217 @@
-<content of gmail-ai-classifier.json>
+{
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// L'AI Agent retourne sa réponse dans $json.output\nconst raw = ($json.output || '').trim().toLowerCase();\nconst allowed = ['important','facturation','new_client','pub','personnel','autre'];\nconst category = allowed.includes(raw) ? raw : 'autre';\nreturn [{ json: { ...$json, category } }];"
+      },
+      "name": "Parse Category",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-448, 384],
+      "id": "20c8658b-c9ea-439f-be5b-5f5234683869"
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Prepare Text1').item.json.messageId }}",
+        "labelIds": ["Label_4880640479126849447"]
+      },
+      "name": "PERSONNEL → Gmail Modify",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [16, 624],
+      "id": "19507527-349d-4809-a5b9-4f82f82abdd2",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Prepare Text1').item.json.messageId }}",
+        "labelIds": ["Label_8158268121141558281"]
+      },
+      "name": "AUTRE → Gmail Modify",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [16, 784],
+      "id": "a2713a00-aff2-4219-bafc-34e46a4e527c",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "operation": "markAsUnread",
+        "messageId": "={{ $('Prepare Text1').item.json.messageId }}"
+      },
+      "name": "Mark PROCESSED",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [800, 368],
+      "id": "2588c48c-32ea-4456-b028-b558e8a2482e",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "messageId": "={{ $('Prepare Text1').item.json.messageId }}"
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [256, 448],
+      "id": "696be3b7-b37a-48e6-b0c2-01e496460b66",
+      "name": "Delete PUB message",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "filters": { "q": "in:inbox -label:PROCESSED" }
+      },
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [-1392, 384],
+      "id": "d5942d81-4feb-4538-b2f4-a1c833b429d9",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "messageId": "={{$json.id}}",
+        "simple": false,
+        "options": {}
+      },
+      "name": "Gmail Get Message1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [-1200, 384],
+      "id": "f13d19c5-9f82-41a5-a83d-2e2ebc68d0a9",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "function header(headers, name) {\n  if (!headers) return '';\n  const h = headers.find(x => (x.name || '').toLowerCase() === name.toLowerCase());\n  return h?.value || '';\n}\n\nconst payload = $json.payload || {};\nconst headers = payload.headers || [];\n\nconst from = header(headers, 'From');\nconst subject = header(headers, 'Subject');\nconst snippet = $json.snippet || '';\n\nfunction extractText(part) {\n  if (!part) return '';\n  const mime = part.mimeType || '';\n  const bodyData = part.body?.data;\n  if ((mime.includes('text/plain') || mime.includes('text/html')) && bodyData) {\n    try {\n      const buff = Buffer.from(bodyData.replace(/-/g, '+').replace(/_/g, '/'), 'base64');\n      return buff.toString('utf8');\n    } catch (e) {\n      return '';\n    }\n  }\n  const parts = part.parts || [];\n  for (const p of parts) {\n    const t = extractText(p);\n    if (t) return t;\n  }\n  return '';\n}\n\nlet body = extractText(payload);\nif (body.length > 7000) body = body.slice(0, 7000);\n\nconst textToClassify = `FROM: ${from}\\nSUBJECT: ${subject}\\nSNIPPET: ${snippet}\\nBODY: ${body.slice(0, 3500)}`;\n\nreturn [{\n  json: {\n    messageId: $json.id,\n    threadId: $json.threadId,\n    from,\n    subject,\n    snippet,\n    bodyPreview: body.slice(0, 3500),\n    textToClassify\n  }\n}];"
+      },
+      "name": "Prepare Text1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-944, 384],
+      "id": "0418d4c6-1349-4719-af1d-3334685f8b8b"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.textToClassify }}",
+        "options": {
+          "systemMessage": "Tu es un agent de tri d'emails.\n\nTu dois répondre uniquement avec UN MOT parmi :\n\nimportant\nfacturation\nnew_client\npub\npersonnel\n\nNe mets rien d'autre.\nPas de JSON.\nPas d'explication.\nJuste un mot."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [-752, 384],
+      "id": "e48165e1-e745-47d0-ab00-4ee218057752",
+      "name": "AI Agent1",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [-752, 560],
+      "id": "476ad287-195c-4f9f-a9fe-3b94822fc8f4",
+      "name": "Groq Chat Model1",
+      "credentials": { "groqApi": { "id": "YOUR_GROQ_CREDENTIAL_ID", "name": "Groq account" } }
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 6,
+        "output": "={{\n  ({\n    important: 0,\n    facturation: 1,\n    new_client: 2,\n    pub: 3,\n    personnel: 4,\n  })[$json.category] ?? 5\n}}"
+      },
+      "name": "Switch Category1",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [-288, 320],
+      "id": "ff2f2c00-8a89-4651-8f07-81c496ae061f"
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Prepare Text1').item.json.messageId }}",
+        "labelIds": ["IMPORTANT", "Label_1211889167280861490"]
+      },
+      "name": "IMPORTANT → Gmail Modify1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [-16, -32],
+      "id": "853d0881-194b-4d69-bca8-e59225395ef2",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Prepare Text1').item.json.messageId }}",
+        "labelIds": ["Label_3024539427297668937"]
+      },
+      "name": "FACTURATION → Gmail Modify1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [0, 112],
+      "id": "800bfd16-6938-4ed7-94d1-584ca1f82b9a",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Prepare Text1').item.json.messageId }}",
+        "labelIds": ["Label_5828007808159396393"]
+      },
+      "name": "NEW_CLIENT → Gmail Modify1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [48, 288],
+      "id": "7ce16ddf-d4be-4913-b50d-01a08e7f1b6e",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Prepare Text1').item.json.messageId }}",
+        "labelIds": ["Label_1093010744698022245"]
+      },
+      "name": "PUB → Gmail Modify1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [0, 464],
+      "id": "5efefa88-7ba5-4cab-b67c-5f539594c27f",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    }
+  ],
+  "connections": {
+    "Parse Category": { "main": [[{ "node": "Switch Category1", "type": "main", "index": 0 }]] },
+    "PERSONNEL → Gmail Modify": { "main": [[{ "node": "Mark PROCESSED", "type": "main", "index": 0 }]] },
+    "AUTRE → Gmail Modify": { "main": [[{ "node": "Mark PROCESSED", "type": "main", "index": 0 }]] },
+    "Gmail Trigger": { "main": [[{ "node": "Gmail Get Message1", "type": "main", "index": 0 }]] },
+    "Gmail Get Message1": { "main": [[{ "node": "Prepare Text1", "type": "main", "index": 0 }]] },
+    "Prepare Text1": { "main": [[{ "node": "AI Agent1", "type": "main", "index": 0 }]] },
+    "AI Agent1": { "main": [[{ "node": "Parse Category", "type": "main", "index": 0 }]] },
+    "Groq Chat Model1": { "ai_languageModel": [[{ "node": "AI Agent1", "type": "ai_languageModel", "index": 0 }]] },
+    "Switch Category1": {
+      "main": [
+        [{ "node": "IMPORTANT → Gmail Modify1", "type": "main", "index": 0 }],
+        [{ "node": "FACTURATION → Gmail Modify1", "type": "main", "index": 0 }],
+        [{ "node": "NEW_CLIENT → Gmail Modify1", "type": "main", "index": 0 }],
+        [{ "node": "PUB → Gmail Modify1", "type": "main", "index": 0 }],
+        [{ "node": "PERSONNEL → Gmail Modify", "type": "main", "index": 0 }],
+        [{ "node": "AUTRE → Gmail Modify", "type": "main", "index": 0 }]
+      ]
+    },
+    "IMPORTANT → Gmail Modify1": { "main": [[{ "node": "Mark PROCESSED", "type": "main", "index": 0 }]] },
+    "FACTURATION → Gmail Modify1": { "main": [[{ "node": "Mark PROCESSED", "type": "main", "index": 0 }]] },
+    "NEW_CLIENT → Gmail Modify1": { "main": [[{ "node": "Mark PROCESSED", "type": "main", "index": 0 }]] },
+    "PUB → Gmail Modify1": { "main": [[{ "node": "Delete PUB message", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "meta": { "templateCredsSetupCompleted": false }
+}
