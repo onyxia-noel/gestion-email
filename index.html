@@ -276,6 +276,23 @@
       height: 460px;
     }
 
+    @media (max-width: 768px) {
+      .screenshots {
+        grid-template-columns: 1fr;
+      }
+      .screenshots img {
+        height: auto !important;
+        max-height: none !important;
+        object-fit: contain !important;
+        object-position: center center !important;
+        width: 100% !important;
+        background: #111;
+      }
+      .screenshots img:first-child {
+        grid-column: 1;
+      }
+    }
+
     /* ─── BADGES ─── */
     .badges {
       display: flex;
